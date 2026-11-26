@@ -1,0 +1,45 @@
+---
+- name: Install and Configure Harbor Registry
+  hosts: all
+  become: yes
+  vars:
+    harbor_version: "v2.11.1"
+    harbor_dir: "/opt/harbor"
+
+  tasks:
+    - name: Create Harbor installation directory
+      file:
+        path: "{{ harbor_dir }}"
+        state: directory
+        mode: '0755'
+
+    - name: Download Harbor online installer
+      get_url:
+        url: "https://github.com/goharbor/harbor/releases/download/{{ harbor_version }}/harbor-online-installer-{{ harbor_version }}.tgz"
+        dest: "/tmp/harbor-online-installer-{{ harbor_version }}.tgz"
+        mode: '0644'
+
+    - name: Extract Harbor installer
+      unarchive:
+        src: "/tmp/harbor-online-installer-{{ harbor_version }}.tgz"
+        dest: "/opt/"
+        remote_src: yes
+        creates: "{{ harbor_dir }}/harbor.yml.tmpl"
+
+    - name: Create clean harbor.yml configuration
+      shell: |
+        cp {{ harbor_dir }}/harbor.yml.tmpl {{ harbor_dir }}/harbor.yml
+        sed -i 's/^hostname:.*/hostname: localhost/' {{ harbor_dir }}/harbor.yml
+        sed -i 's/^\s*port: 80$/ port: 8082/' {{ harbor_dir }}/harbor.yml
+        sed -i '/^https:/,/private_key:/s/^/#/' {{ harbor_dir }}/harbor.yml
+
+    - name: Run Harbor install script
+      command: ./install.sh
+      args:
+        chdir: "{{ harbor_dir }}"
+        creates: "{{ harbor_dir }}/docker-compose.yml"
+
+    - name: Ensure Harbor containers are up and running
+      command: docker compose up -d
+      args:
+        chdir: "{{ harbor_dir }}"

@@ -1,0 +1,66 @@
+---
+- name: Install and Configure Jenkins
+  hosts: all
+  become: yes
+
+  tasks:
+    - name: Check if Jenkins is already installed
+      command: which jenkins
+      register: jenkins_installed
+      ignore_errors: yes
+      changed_when: false
+
+    - name: Install Java (OpenJDK 17) if Jenkins is not installed
+      apt:
+        name:
+          - fontconfig
+          - openjdk-17-jre
+        state: present
+        update_cache: yes
+      when: jenkins_installed.rc != 0
+
+    - name: Add Jenkins GPG key
+      shell: |
+        curl -fsSL https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key | tee /usr/share/keyrings/jenkins-keyring.asc > /dev/null
+      args:
+        creates: /usr/share/keyrings/jenkins-keyring.asc
+      when: jenkins_installed.rc != 0
+
+    - name: Add Jenkins APT repository
+      shell: |
+        echo "deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian-stable binary/" | tee /etc/apt/sources.list.d/jenkins.list > /dev/null
+      args:
+        creates: /etc/apt/sources.list.d/jenkins.list
+      when: jenkins_installed.rc != 0
+
+    - name: Install Jenkins
+      apt:
+        name: jenkins
+        state: present
+        update_cache: yes
+      when: jenkins_installed.rc != 0
+
+    - name: Ensure Jenkins service is started and enabled
+      service:
+        name: jenkins
+        state: started
+        enabled: yes
+
+    - name: Add jenkins user to docker group for CI/CD builds
+      user:
+        name: jenkins
+        groups: docker
+        append: yes
+      notify: Restart Jenkins
+
+    - name: Wait for Jenkins to listen on port 8080
+      wait_for:
+        port: 8080
+        delay: 3
+        timeout: 60
+
+  handlers:
+    - name: Restart Jenkins
+      service:
+        name: jenkins
+        state: restarted

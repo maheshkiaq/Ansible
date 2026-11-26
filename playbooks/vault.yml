@@ -1,0 +1,64 @@
+---
+- name: Install and Configure HashiCorp Vault
+  hosts: all
+  become: yes
+
+  tasks:
+    - name: Install prerequisite packages
+      apt:
+        name:
+          - gpg
+          - wget
+          - curl
+        state: present
+        update_cache: yes
+
+    - name: Add HashiCorp GPG key
+      shell: |
+        wget -O- https://apt.releases.hashicorp.com/gpg | gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg --yes
+      args:
+        creates: /usr/share/keyrings/hashicorp-archive-keyring.gpg
+
+    - name: Add HashiCorp APT repository
+      shell: |
+        echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" | tee /etc/apt/sources.list.d/hashicorp.list > /dev/null
+      args:
+        creates: /etc/apt/sources.list.d/hashicorp.list
+
+    - name: Install HashiCorp Vault
+      apt:
+        name: vault
+        state: present
+        update_cache: yes
+
+    - name: Configure Vault HCL file
+      copy:
+        dest: /etc/vault.d/vault.hcl
+        owner: vault
+        group: vault
+        mode: '0640'
+        content: |
+          ui = true
+          disable_mlock = true
+
+          storage "file" {
+            path = "/opt/vault/data"
+          }
+
+          listener "tcp" {
+            address = "0.0.0.0:8200"
+            tls_disable = 1
+          }
+      notify: Restart Vault
+
+    - name: Ensure Vault service is started and enabled
+      service:
+        name: vault
+        state: started
+        enabled: yes
+
+  handlers:
+    - name: Restart Vault
+      service:
+        name: vault
+        state: restarted
